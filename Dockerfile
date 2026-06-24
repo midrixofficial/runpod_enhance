@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Set python3.10 as default python
-RUN ln -s /usr/bin/python3.10 /usr/bin/python
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.10 /usr/bin/python
 
 # Set working directory inside container
 WORKDIR /app
@@ -29,4 +30,4 @@ COPY realesr_general_x4v3.onnx .
 COPY handler.py .
 
 # Run the handler (unbuffered output for better logging)
-CMD ["python", "-u", "handler.py"]
+CMD ["python3", "-u", "handler.py"]
