@@ -1,0 +1,11 @@
+{
+  "input": {
+    "image_url": "https://raw.githubusercontent.com/xinntao/Real-ESRGAN/master/inputs/00003.png",
+    "sharpen_amount": 0.35,
+    "contrast_alpha": 1.04,
+    "brightness_beta": 3,
+    "tile_size": 256,
+    "tile_pad": 16,
+    "output_format": "jpeg"
+  }
+}
