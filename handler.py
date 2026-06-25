@@ -27,11 +27,10 @@ cv2.setUseOptimized(True)
 cv2.setNumThreads(NUM_THREADS)
 
 # Try CUDA execution provider first, fallback to CPU
-# Using EXHAUSTIVE search for cuDNN allows ONNX to benchmark and select the fastest convolution algorithm
-# during the initial warm-up run, maximizing subsequent execution speeds.
+# We use DEFAULT convolution algorithm search to avoid CUDA search failures that produce NaN/black images.
 providers = [
     ("CUDAExecutionProvider", {
-        "cudnn_conv_algo_search": "EXHAUSTIVE",
+        "cudnn_conv_algo_search": "DEFAULT",
     }),
     "CPUExecutionProvider"
 ]
