@@ -44,6 +44,23 @@ except Exception as e:
     session = ort.InferenceSession(ONNX_PATH, sess_options, providers=["CPUExecutionProvider"])
     print(f"✅ ONNX Session loaded on CPU.")
 
+try:
+    INPUT_NAME = session.get_inputs()[0].name
+    OUTPUT_NAME = session.get_outputs()[0].name
+    print("Input:", INPUT_NAME)
+    print("Output:", OUTPUT_NAME)
+    
+    print("Model Inputs:")
+    for inp_info in session.get_inputs():
+        print(f"  {inp_info.name} : {inp_info.type} {inp_info.shape}")
+    print("Model Outputs:")
+    for out_info in session.get_outputs():
+        print(f"  {out_info.name} : {out_info.type} {out_info.shape}")
+except Exception as e:
+    print("⚠️ Error getting model input/output names:", e)
+    INPUT_NAME = "input"
+    OUTPUT_NAME = "output"
+
 # ================= IMAGE UTILS =================
 def decode_base64_image(base64_str):
     if "," in base64_str:
@@ -72,6 +89,7 @@ def encode_image_to_base64(img, format_str=".jpg"):
 
 # ================= CORE LOGIC =================
 def preprocess(img):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = img.astype(np.float32) * (1.0 / 255.0)
     img = np.transpose(img, (2, 0, 1))
     return np.expand_dims(img, 0)
@@ -79,7 +97,8 @@ def preprocess(img):
 def postprocess(output):
     output = np.squeeze(output)
     output = np.transpose(output, (1, 2, 0))
-    return (output * 255).clip(0, 255).astype(np.uint8)
+    output = (output * 255).clip(0, 255).astype(np.uint8)
+    return cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
 
 def process_tile(args):
     sess, img_padded, x1, x2, y1, y2, tile_pad, scale = args
@@ -87,7 +106,18 @@ def process_tile(args):
     tile = img_padded[y1:y2 + pad, x1:x2 + pad]
     
     inp = preprocess(tile)
-    out = sess.run(None, {"input": inp})[0]
+    out = sess.run([OUTPUT_NAME], {INPUT_NAME: inp})[0]
+    
+    print("=" * 60)
+    print("Provider:", sess.get_providers())
+    print("dtype :", out.dtype)
+    print("shape :", out.shape)
+    print("min   :", np.min(out))
+    print("max   :", np.max(out))
+    print("mean  :", np.mean(out))
+    print("nan   :", np.isnan(out).any())
+    print("=" * 60)
+    
     out = postprocess(out)
     
     p = tile_pad * scale
@@ -118,7 +148,18 @@ def enhance_image_logic(img, sharpen_amount=0.35, contrast_alpha=1.04, brightnes
             img_padded = img
             
         inp = preprocess(img_padded)
-        out = session.run(None, {"input": inp})[0]
+        out = session.run([OUTPUT_NAME], {INPUT_NAME: inp})[0]
+        
+        print("=" * 60)
+        print("Provider:", session.get_providers())
+        print("dtype :", out.dtype)
+        print("shape :", out.shape)
+        print("min   :", np.min(out))
+        print("max   :", np.max(out))
+        print("mean  :", np.mean(out))
+        print("nan   :", np.isnan(out).any())
+        print("=" * 60)
+        
         output = postprocess(out)
         
         if pad_h > 0 or pad_w > 0:
@@ -149,9 +190,9 @@ def enhance_image_logic(img, sharpen_amount=0.35, contrast_alpha=1.04, brightnes
 
     # Post-Processing
     if sharpen_amount > 0:
-        kernel = np.array([[-1, -1, -1],
-                           [-1, 9*sharpen_amount, -1],
-                           [-1, -1, -1]]) / (8*sharpen_amount + 1)
+        kernel = np.array([[-sharpen_amount, -sharpen_amount, -sharpen_amount],
+                           [-sharpen_amount, 1 + 8*sharpen_amount, -sharpen_amount],
+                           [-sharpen_amount, -sharpen_amount, -sharpen_amount]])
         output = cv2.filter2D(output, -1, kernel)
 
     if contrast_alpha != 1.0 or brightness_beta != 0:
@@ -170,11 +211,21 @@ def handler(job):
     image_url = job_input.get("image_url")
     image_b64 = job_input.get("image_b64")
     
-    sharpen_amount = job_input.get("sharpen_amount", 0.35)
-    contrast_alpha = job_input.get("contrast_alpha", 1.04)
-    brightness_beta = job_input.get("brightness_beta", 3)
-    tile_size = job_input.get("tile_size", 256)
-    tile_pad = job_input.get("tile_pad", 16)
+    sharpen_val = job_input.get("sharpen_amount")
+    sharpen_amount = float(sharpen_val) if sharpen_val is not None else 0.35
+    
+    contrast_val = job_input.get("contrast_alpha")
+    contrast_alpha = float(contrast_val) if contrast_val is not None else 1.04
+    
+    brightness_val = job_input.get("brightness_beta")
+    brightness_beta = int(brightness_val) if brightness_val is not None else 3
+    
+    tile_size_val = job_input.get("tile_size")
+    tile_size = int(tile_size_val) if tile_size_val is not None else 256
+    
+    tile_pad_val = job_input.get("tile_pad")
+    tile_pad = int(tile_pad_val) if tile_pad_val is not None else 16
+    
     output_format = job_input.get("output_format", "jpeg") # jpeg or png
     
     # Validation
@@ -195,11 +246,11 @@ def handler(job):
         # 3. Process image
         enhanced = enhance_image_logic(
             img,
-            sharpen_amount=float(sharpen_amount),
-            contrast_alpha=float(contrast_alpha),
-            brightness_beta=int(brightness_beta),
-            tile_size=int(tile_size),
-            tile_pad=int(tile_pad)
+            sharpen_amount=sharpen_amount,
+            contrast_alpha=contrast_alpha,
+            brightness_beta=brightness_beta,
+            tile_size=tile_size,
+            tile_pad=tile_pad
         )
         
         # 4. Encode and return output
